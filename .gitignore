@@ -1,0 +1,11 @@
+# Large data files
+data/
+scMINER_pipeline/DATA/
+scMINER_pipeline/MICA/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Python cache
+__pycache__/
+*.pyc
