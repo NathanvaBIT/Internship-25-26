@@ -1,0 +1,9 @@
+DATA/
+MICA_INPUT/
+MICA_OUTPUT/
+RESULTS/
+PLOT/
+*.h5ad
+*.pkl
+*.RData
+.Rhistory
