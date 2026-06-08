@@ -22,3 +22,11 @@ scMINER_pipeline/MICA_INPUT/
 scMINER_pipeline/MICA_OUTPUT/
 scMINER_pipeline/RESULTS/
 CellTypist_pipeline/notebooks/Staph_Aureus_BF_P_Model.pkl
+
+# CellTypist large data
+CellTypist_pipeline/data/
+CellTypist_pipeline/notebooks/!pwd
+CellTypist_pipeline/notebooks/Untitled-1
+CellTypist_pipeline/notebooks/collab
+~$*.pdf
+~$*.docx
