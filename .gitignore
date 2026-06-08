@@ -9,3 +9,16 @@ scMINER_pipeline/MICA/
 # Python cache
 __pycache__/
 *.pyc
+
+# R files
+.Rhistory
+*.RData
+
+# Large data files
+*.h5ad
+*.pkl
+*.txt
+scMINER_pipeline/MICA_INPUT/
+scMINER_pipeline/MICA_OUTPUT/
+scMINER_pipeline/RESULTS/
+CellTypist_pipeline/notebooks/Staph_Aureus_BF_P_Model.pkl
