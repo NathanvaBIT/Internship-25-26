@@ -297,4 +297,102 @@ View(markers)  # opent netjes in RStudio
 
 
 
+# ==============================================================================
+# EXTENSION: SCMINER VISUALIZATION & PAPER CROSS-VALIDATION
+# ==============================================================================
+cat("\n--- Activating scMINER for final visualization... ---\n")
+
+# Zorg dat de PLOT map bestaat
+plot_dir <- "./PLOT"
+if (!dir.exists(plot_dir)) dir.create(plot_dir, recursive = TRUE)
+
+# We gebruiken de 'combined.eset' die hierboven in de pipeline succesvol is gemaakt
+scminer_eset <- combined.eset
+
+# ==============================================================================
+# STEP 8B: OVERLAY BACTERIAL EXPRESSION DATA VIA GGPLOT2 (FEATURE PLOTS)
+# ==============================================================================
+key_genes <- c("rpoA", "tuf", "thiW", "tcyP", "sasA", "mvaK2", "dapA", "ebh", "icaB", "lukD", "mecA")
+genes_to_plot <- key_genes[key_genes %in% rownames(scminer_eset)]
+
+cat("\n--- Generating UMAP Feature Plots in FULL COLOR (Panels B, C, D)... ---\n")
+
+for (gene in genes_to_plot) {
+  
+  gene_expr <- as.numeric(exprs(scminer_eset)[gene, ])
+  
+  plot_df <- data.frame(
+    UMAP_1     = pData(scminer_eset)$UMAP_1,
+    UMAP_2     = pData(scminer_eset)$UMAP_2,
+    expression = gene_expr
+  )
+  
+  # Sort so high-expression cells are plotted on top (not hidden behind grey cells)
+  plot_df <- plot_df[order(plot_df$expression), ]
+  
+  p <- ggplot(plot_df, aes(x = UMAP_1, y = UMAP_2, color = expression)) +
+    geom_point(size = 0.4) +
+    scale_color_gradientn(
+      colors = c("lightgrey", "blue", "yellow", "red"),
+      name   = "Expression"
+    ) +
+    theme_minimal() +
+    labs(title = paste("Expression of", gene)) +
+    theme(plot.title = element_text(face = "bold", hjust = 0.5))
+  
+  file_name <- file.path(plot_dir, paste0("scMINER_UMAP_", gene, ".pdf"))
+  ggsave(file_name, plot = p, width = 6, height = 5)
+  cat("Saved:", basename(file_name), "\n")
+}
+
+cat("\n--- SUCCESS: All full-color UMAP expression plots have been saved! ---\n")
+
+# ==============================================================================
+# STEP 8C: CROSS-VALIDATION VIA scMINER BUBBLEPLOT (DOT PLOT ALTERNATIEF)
+# ==============================================================================
+# Dit toont hoe de highly expressed genen uit de paper zich verdelen over de MICA-clusters.
+
+# VEILIGHEIDSCHECK: Probeer de paper markers in te laden als het object nog niet bestaat
+if (!exists("paper_markers")) {
+  possible_marker_file <- "./RESULTS/MICA_MDS_Cluster_K4_Top10_Markers.csv"
+  if (file.exists(possible_marker_file)) {
+    paper_markers <- read.csv(possible_marker_file)
+    cat("Loaded paper markers from:", possible_marker_file, "\n")
+  } else if (exists("cluster_markers")) {
+    paper_markers <- cluster_markers
+    cat("Using cluster_markers from Step 7 as fallback.\n")
+  } else {
+    warning("Gewaarschuwd: 'paper_markers' of 'cluster_markers' niet gevonden. Stap 8C overgeslagen.")
+    paper_markers <- NULL
+  }
+}
+
+if (!is.null(paper_markers)) {
+  # Bepaal welke kolom de gennamen bevat (afhankelijk van je invoerbestanden, meestal 'feature' of 'Gene_Symbol')
+  gene_col <- intersect(c("feature", "Gene_Symbol", "gene"), colnames(paper_markers))[1]
+  
+  if (!is.na(gene_col)) {
+    all_paper_genes_present <- unique(paper_markers[[gene_col]][paper_markers[[gene_col]] %in% rownames(scminer_eset)])
+    
+    cat("\n--- Generating Cross-Validation Bubble Plot... ---\n")
+    
+    bubble_plot <- feature_bubbleplot(
+      input_eset = scminer_eset, 
+      features = all_paper_genes_present, 
+      group_by = "clusterID", 
+      xlabel.angle = 45
+    ) + 
+      theme(axis.text.x = element_text(size = 8, hjust = 1, vjust = 1)) +
+      ggtitle("MICA Clusters vs. Published Paper Markers")
+    
+    # Opslaan van de cross-validation matrix
+    ggsave(file.path(plot_dir, "scMINER_BubblePlot_Paper_Markers.pdf"), plot = bubble_plot, width = 13, height = 6)
+    cat("\n--- SUCCESS: Cross-validation bubbleplot gegenereerd! ---\n")
+  } else {
+    cat("\n[Notice]: Kon geen gennamen-kolom vinden in de marker tabel. Bubbleplot overgeslagen.\n")
+  }
+}
+
+cat("\n--- FINISHED: Pipeline-uitbreiding voltooid. Check de map:", plot_dir, "---\n")
+
 
