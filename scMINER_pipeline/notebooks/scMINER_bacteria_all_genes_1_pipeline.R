@@ -128,8 +128,8 @@ for (k in 2:8) {
 
 # Determine the mathematically optimal cluster configuration from the loop
 if (length(silhouette_results) > 0) {
-  best_k <- names(silhouette_results)[which.max(unlist(silhouette_results))]
-  cat("\n==> Optimal configuration based on MDS parameters is K =", best_k, "with a validation score of", round(silhouette_results[[best_k]], 4), "!\n\n")
+  best_k <- "7"
+  cat("\n==> Manually set configuration: K =", best_k, "\n\n")
 } else {
   stop("CRITICAL ERROR: No data files could be correctly accessed or scanned.")
 }
@@ -203,196 +203,230 @@ output_file_path <- file.path(results_dir, paste0("MICA_MDS_Cluster_K", best_k, 
 write.csv(cluster_markers, file = output_file_path, row.names = FALSE)
 cat(paste0("SUCCESS: Markers exported to: ", basename(output_file_path), "\n"))
 
-# --------------------------------------------------------------------------
-# BUBBLEPLOT VISUALISATION OF TOP MARKER GENES ACROSS CLUSTERS
-# --------------------------------------------------------------------------
+# ==============================================================================
+# UMAP PLOTS PER MARKER GENE
+# ==============================================================================
 
-# 1. Generate the base bubble plot with vertical labels (90 degrees) to prevent overlaps
-p <- feature_bubbleplot(input_eset   = combined.eset, 
-                        features     = unique(cluster_markers$feature), 
-                        group_by     = "clusterID", 
-                        xlabel.angle = 90)
+library(viridis)
 
-# 2. Fine-tune X-axis text for perfect PowerPoint legibility
-p_fixed <- p + theme(
-  axis.text.x = element_text(
-    size = 8,          # Shrink text slightly so more genes fit side-by-side
-    hjust = 1,         # Right-align labels so they line up perfectly under each dot column
-    vjust = 0.5        # Center text vertically relative to the rotation point
-  )
+# --- Project Directory Configuration ---
+plot_dir <- "C:/Users/natha/OneDrive/Bio-informatica_25-26/International Internship/Internship-25-26/scMINER_pipeline/PLOT/"
+dir.create(plot_dir, showWarnings = FALSE)
+
+# Use combined.eset directly — DO NOT reload .RData (would overwrite clusterID!)
+active_eset <- combined.eset
+
+# Pull UMAP coordinates from pData (already integrated in Step 6)
+umap_df <- data.frame(
+  UMAP_1 = pData(active_eset)$UMAP_1,
+  UMAP_2 = pData(active_eset)$UMAP_2
 )
 
-# 3. Display the corrected plot on screen
-print(p_fixed)
+# Extract the expression matrix
+expr_matrix <- exprs(active_eset)
 
-# 4. Export high-res image using your relative path
-# This automatically saves it into the 'PLOT' folder of your current working directory
-ggsave(filename = "./PLOT/top_markers_widescreen.png", plot = p_fixed, width = 14, height = 6, dpi = 300)
+# Define the list of 53 custom marker genes
+marker_genes <- c(
+  "nickel ABC transporter substrate-binding protein", "accD", "nusA", "6S RNA", 
+  "SAUSA300_RS07045", "SAUSA300_RS08485", "pxpA", "tpiA", "rpoY", "pyrH", 
+  "thiW", "tcyP", "sasA", "mvaK2", "sodium:proton antiporter-1", "clpB", 
+  "HAD family hydrolase", "MFS transporter-3", "dapA", "SAUSA300_RS02370", 
+  "alanine glycine permease-1", "acyltransferase", 
+  "bifunctional metallophosphatase/5'-nucleotidase-1", "SAUSA300_RS09795", 
+  "int", "sek", "icaB", "queE", "lpl9", "tandem-type lipoprotein-1", 
+  "ATPase-1", "N-acetyltransferase-2", "haloacid dehalogenase-2", 
+  "energy coupling factor transporter S component ThiW", "rpoA", "glpT", 
+  "gpmA", "pbp1", "polX", "cls2", "accA", "ebh", "cntA", 
+  "signal recognition particle sRNA large type", "tuf", "nasE", 
+  "SAUSA300_RS15635", "xylose isomerase", "tagO", "tmaH", "pcrB", "pepQ2"
+)
 
-# ==============================================================================
-# STEP 8: CELLTYPIST INTEGRATION AND BIOLOGICAL CONSENSUS MAPPING
-# ==============================================================================
-if (file.exists(celltypist_file)) {
-  celltypist_data <- read.table(celltypist_file, header = TRUE, sep = "\t")
+# Cross-reference with the active dataset
+valid_genes <- marker_genes[marker_genes %in% rownames(active_eset)]
+print(paste("Validated:", length(valid_genes), "out of 53 genes found in active dataset."))
+
+# Loop through verified marker genes to create separate PDFs
+print("Generating individual viridis-highlighted PDFs...")
+
+for (gene in valid_genes) {
   
-  # Map high-confidence CellTypist annotations to the synchronized dataset cells
-  pData(combined.eset)$Celltypist_Label <- as.factor(
-    celltypist_data$predicted_labels[match(rownames(pData(combined.eset)), 
-                                           celltypist_data$ID)]
-  )
+  # Create Windows-safe file names
+  safe_gene_name <- gsub("[^A-Za-z0-9_-]", "_", gene)
+  gene_pdf_path  <- paste0(plot_dir, "MICA_TOP_MARKER_GENES_Leiden_clustering_", safe_gene_name, ".pdf")
   
-  # Compute the downstream consensus matrix (cross-tabulation evaluation)
-  consensus_table <- table(pData(combined.eset)$clusterID,        # ← fixed
-                           pData(combined.eset)$Celltypist_Label)
+  umap_df$Expression <- expr_matrix[gene, ]
   
-  cat("\n--- CONSENSUS ANNOTATION MATRIX (MICA MDS vs CellTypist) ---\n")
-  print(consensus_table)
-  cat("-------------------------------------------------------------\n")
+  pdf(gene_pdf_path, width = 8, height = 7)
   
-  # Save the cross-tabulation table for the final report appendix
-  write.csv(consensus_table, 
-            file = file.path(results_dir, "MICA_vs_Celltypist_Consensus.csv"))
-  
-  # Generate publication-quality proportional distribution plot using ggplot2
-  ggplot(pData(combined.eset), aes(x = clusterID,                 # ← fixed
-                                   fill = Celltypist_Label)) +
-    geom_bar(position = "fill") +
+  p <- ggplot(umap_df, aes(x = UMAP_1, y = UMAP_2, color = Expression)) +
+    geom_point(size = 0.6, alpha = 0.8) +
+    scale_color_viridis(option = "D", direction = 1) + 
+    labs(title = paste("Expression of", gene),
+         x = "UMAP_1", y = "UMAP_2",
+         color = "Log Expression") +
     theme_minimal() +
-    labs(title = paste0("CellTypist Label Distribution Across MICA MDS Clusters (K=", best_k, ")"),
-         x     = "MICA MDS Clusters",
-         y     = "Proportion of Cells",
-         fill  = "CellTypist Label") +
-    theme(plot.title = element_text(face = "bold", hjust = 0.5))
+    theme(
+      plot.title = element_text(size = 13, face = "bold", hjust = 0.5),
+      panel.grid = element_blank(),
+      axis.text  = element_blank(),
+      axis.ticks = element_blank()
+    )
   
-  ggsave(file.path(results_dir, "MICA_Celltypist_Consensus_Plot.png"), 
-         width = 8, height = 5)
-  cat("Consensus visualization saved to the RESULTS folder!\n")
-  
-} else {
-  cat("\n[Notice]: CellTypist prediction file was not found at:", celltypist_file, "\n")
-  cat("Pipeline is ready; step 8 will execute once CellTypist output is available.\n")
+  print(p)
+  dev.off()
 }
 
-markers <- read.csv("./RESULTS/MICA_MDS_Cluster_K4_Top10_Markers.csv")
-View(markers)  # opent netjes in RStudio
-
-
-# Figure 1 (CellTypist) defines the biological state of each mathematical cluster,
-# while Figure 2 (Bubble Plot) uncovers the molecular mechanisms that drive those states.
-#
-# Starting with Cluster 1, the Step 8 bar chart confirms it is almost exclusively
-# planktonic. The bubble plot then reveals why: both cntA and the nickel ABC transporter
-# protein are uniquely and heavily expressed in this cluster, making cntA a robust,
-# high-confidence biomarker for planktonic cells.
-#
-# Cluster 4 tells a different story. The bar chart shows it is heavily enriched with
-# biofilm cells, and the bubble plot exposes the underlying machinery: rpoA (an RNA
-# polymerase subunit) and 6S RNA (a regulatory RNA) are both highly active here.
-# This points to a major transcriptional overhaul at the moment of biofilm commitment,
-# likely orchestrated by 6S RNA-mediated regulation during the stress and switching phase.
-#
-# Taken together, the CSV data and bar chart validate the cell populations, while the
-# bubble plot serves as the visual discovery tool that exposes which bacterial machinery
-# is actively at work — a central finding of this international internship project.
-
-
+print(paste("\n--- SUCCESS: All", length(valid_genes), "individual PDFs generated in:", plot_dir, "---"))
 
 # ==============================================================================
-# EXTENSION: SCMINER VISUALIZATION & PAPER CROSS-VALIDATION
+# BUBBLEPLOT HIGHLY EXPRESSED COMMON GENES MICA
 # ==============================================================================
-cat("\n--- Activating scMINER for final visualization... ---\n")
 
-# Zorg dat de PLOT map bestaat
-plot_dir <- "./PLOT"
-if (!dir.exists(plot_dir)) dir.create(plot_dir, recursive = TRUE)
+# Load the highly expressed common genes from txt file
+common_genes_path <- "C:/Users/natha/OneDrive/Bio-informatica_25-26/International Internship/Internship-25-26/scMINER_pipeline/RESULTS/highly_expressed_genes_common.txt"
 
-# We gebruiken de 'combined.eset' die hierboven in de pipeline succesvol is gemaakt
-scminer_eset <- combined.eset
+common_genes <- readLines(common_genes_path)
+common_genes <- trimws(common_genes[common_genes != ""])
+cat(paste0("Loaded ", length(common_genes), " genes from file.\n"))
 
-# ==============================================================================
-# STEP 8B: OVERLAY BACTERIAL EXPRESSION DATA VIA GGPLOT2 (FEATURE PLOTS)
-# ==============================================================================
-key_genes <- c("rpoA", "tuf", "thiW", "tcyP", "sasA", "mvaK2", "dapA", "ebh", "icaB", "lukD", "mecA")
-genes_to_plot <- key_genes[key_genes %in% rownames(scminer_eset)]
+# Cross-reference with active dataset
+valid_common_genes <- common_genes[common_genes %in% rownames(active_eset)]
+cat(paste0("Validated: ", length(valid_common_genes), " out of ", 
+           length(common_genes), " genes found in active dataset.\n"))
 
-cat("\n--- Generating UMAP Feature Plots in FULL COLOR (Panels B, C, D)... ---\n")
+if (length(valid_common_genes) == 0) {
+  stop("ERROR: No genes from txt file found in dataset. Check gene names!")
+}
 
-for (gene in genes_to_plot) {
-  
-  gene_expr <- as.numeric(exprs(scminer_eset)[gene, ])
-  
-  plot_df <- data.frame(
-    UMAP_1     = pData(scminer_eset)$UMAP_1,
-    UMAP_2     = pData(scminer_eset)$UMAP_2,
-    expression = gene_expr
+# Compute average expression and percentage of expressing cells per cluster
+bubble_data <- do.call(rbind, lapply(levels(pData(active_eset)$clusterID), function(cl) {
+  idx     <- pData(active_eset)$clusterID == cl
+  sub_mat <- expr_matrix[valid_common_genes, idx, drop = FALSE]
+  data.frame(
+    gene    = valid_common_genes,
+    cluster = cl,
+    avg_exp = rowMeans(sub_mat),
+    pct_exp = rowMeans(sub_mat > 0) * 100
   )
-  
-  # Sort so high-expression cells are plotted on top (not hidden behind grey cells)
-  plot_df <- plot_df[order(plot_df$expression), ]
-  
-  p <- ggplot(plot_df, aes(x = UMAP_1, y = UMAP_2, color = expression)) +
-    geom_point(size = 0.4) +
-    scale_color_gradientn(
-      colors = c("lightgrey", "blue", "yellow", "red"),
-      name   = "Expression"
-    ) +
-    theme_minimal() +
-    labs(title = paste("Expression of", gene)) +
-    theme(plot.title = element_text(face = "bold", hjust = 0.5))
-  
-  file_name <- file.path(plot_dir, paste0("scMINER_UMAP_", gene, ".pdf"))
-  ggsave(file_name, plot = p, width = 6, height = 5)
-  cat("Saved:", basename(file_name), "\n")
-}
+}))
 
-cat("\n--- SUCCESS: All full-color UMAP expression plots have been saved! ---\n")
+# Order clusters numerically on x-axis
+bubble_data$cluster <- factor(bubble_data$cluster,
+                              levels = sort(unique(as.numeric(bubble_data$cluster))))
+
+# Generate the bubbleplot
+p_bubble <- ggplot(bubble_data, aes(x = cluster, y = gene, size = pct_exp, color = avg_exp)) +
+  geom_point() +
+  scale_color_viridis_c(option = "D", name = "Avg Expression") +
+  scale_size(range = c(1, 10), name = "% Expressing Cells") +
+  labs(
+    title    = "Bubbleplot Duplicated Genes MICA",
+    subtitle = paste0("Highly expressed common genes across ",
+                      nlevels(pData(active_eset)$clusterID),
+                      " clusters (n = ", length(valid_common_genes), " genes)"),
+    x        = "Cluster",
+    y        = "Gene"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title      = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle   = element_text(size = 10, hjust = 0.5, color = "grey40"),
+    axis.text.x     = element_text(angle = 45, hjust = 1, size = 10),
+    axis.text.y     = element_text(size = 9),
+    panel.grid      = element_line(color = "grey90"),
+    legend.position = "right"
+  )
+
+# Export bubbleplot to PDF in RESULTS folder
+bubble_pdf_path <- file.path(results_dir, "Bubbleplot_Duplicated_Genes_MICA.pdf")
+pdf(bubble_pdf_path, width = 10, height = 7)
+print(p_bubble)
+dev.off()
+cat(paste0("SUCCESS: Bubbleplot exported to: ", basename(bubble_pdf_path), "\n"))
 
 # ==============================================================================
-# STEP 8C: CROSS-VALIDATION VIA scMINER BUBBLEPLOT (DOT PLOT ALTERNATIEF)
+# SAVE FINAL MICA ESET OBJECT (with clusterID)
 # ==============================================================================
-# Dit toont hoe de highly expressed genen uit de paper zich verdelen over de MICA-clusters.
+saveRDS(combined.eset,
+        file = file.path(results_dir, "MICA_combined_eset_K7.rds"))
+cat("SUCCESS: MICA eset saved as MICA_combined_eset_K7.rds\n")
 
-# VEILIGHEIDSCHECK: Probeer de paper markers in te laden als het object nog niet bestaat
-if (!exists("paper_markers")) {
-  possible_marker_file <- "./RESULTS/MICA_MDS_Cluster_K4_Top10_Markers.csv"
-  if (file.exists(possible_marker_file)) {
-    paper_markers <- read.csv(possible_marker_file)
-    cat("Loaded paper markers from:", possible_marker_file, "\n")
-  } else if (exists("cluster_markers")) {
-    paper_markers <- cluster_markers
-    cat("Using cluster_markers from Step 7 as fallback.\n")
-  } else {
-    warning("Gewaarschuwd: 'paper_markers' of 'cluster_markers' niet gevonden. Stap 8C overgeslagen.")
-    paper_markers <- NULL
-  }
+# ==============================================================================
+# ==============================================================================
+# ==============================================================================
+
+# 1. Zet je werkmap correct naar jouw projectmap
+
+
+# 2. Laad de benodigde bibliotheek en je opgeslagen object uit de RESULTS map
+library(Biobase)
+combined.eset <- readRDS("./RESULTS/MICA_combined_eset_K7.rds")
+
+# 3. Trek de getransponeerde expressiematrix eruit (Cellen x Genen)
+matrix_transposed <- t(exprs(combined.eset))
+
+# 4. Trek de cell metadata (pData) eruit
+metadata_table <- pData(combined.eset)
+
+# Waarom: Veiligheidscheck om er zeker van te zijn dat de coördinaten erin zitten
+if (!"UMAP_1" %in% colnames(metadata_table)) {
+  stop("CRITICAL ERROR: UMAP_1 (MICA coördinaten) niet gevonden in pData! Run eerst Step 6 van je script.")
 }
 
-if (!is.null(paper_markers)) {
-  # Bepaal welke kolom de gennamen bevat (afhankelijk van je invoerbestanden, meestal 'feature' of 'Gene_Symbol')
-  gene_col <- intersect(c("feature", "Gene_Symbol", "gene"), colnames(paper_markers))[1]
-  
-  if (!is.na(gene_col)) {
-    all_paper_genes_present <- unique(paper_markers[[gene_col]][paper_markers[[gene_col]] %in% rownames(scminer_eset)])
-    
-    cat("\n--- Generating Cross-Validation Bubble Plot... ---\n")
-    
-    bubble_plot <- feature_bubbleplot(
-      input_eset = scminer_eset, 
-      features = all_paper_genes_present, 
-      group_by = "clusterID", 
-      xlabel.angle = 45
-    ) + 
-      theme(axis.text.x = element_text(size = 8, hjust = 1, vjust = 1)) +
-      ggtitle("MICA Clusters vs. Published Paper Markers")
-    
-    # Opslaan van de cross-validation matrix
-    ggsave(file.path(plot_dir, "scMINER_BubblePlot_Paper_Markers.pdf"), plot = bubble_plot, width = 13, height = 6)
-    cat("\n--- SUCCESS: Cross-validation bubbleplot gegenereerd! ---\n")
-  } else {
-    cat("\n[Notice]: Kon geen gennamen-kolom vinden in de marker tabel. Bubbleplot overgeslagen.\n")
-  }
-}
+# 5. Schrijf de data weg als CSV naar je huidige map
+write.csv(as.matrix(matrix_transposed), file="./matrix_voor_python.csv", row.names=TRUE)
+write.csv(metadata_table, file="./metadata_voor_python.csv", row.names=TRUE)
 
-cat("\n--- FINISHED: Pipeline-uitbreiding voltooid. Check de map:", plot_dir, "---\n")
+print("SUCCESS: Deel 1 afgerond! De CSV-bestanden staan klaar voor Python.")
 
+
+
+import os
+import anndata as ad
+import pandas as pd
+import numpy as np
+
+# 1. Zorg dat Python in exact dezelfde map werkt
+current_dir = "C:/Users/natha/OneDrive/Bio-informatica_25-26/International Internship/Internship-25-26/scMINER_pipeline"
+os.chdir(current_dir)
+
+# 2. Lees de zojuist gemaakte CSV's in
+print("Data inladen...")
+counts = pd.read_csv("./matrix_voor_python.csv", index_col=0)
+metadata = pd.read_csv("./metadata_voor_python.csv", index_col=0)
+
+# Waarom: Sanity check. De rijen van de matrix moeten 100% matchen met de rijen van de metadata.
+if not (counts.index == metadata.index).all():
+  raise ValueError("FOUT: De Cel-ID's van de matrix en metadata komen niet overeen!")
+
+# 3. Het AnnData object initialiseren
+# Waarom: We stoppen de counts in 'X' en koppelen de metadata aan 'obs'
+adata = ad.AnnData(X=counts.values, obs=metadata)
+
+# Waarom: Expliciet de celnamen en gennamen toewijzen zodat indexering werkt
+adata.obs_names = counts.index.astype(str)
+adata.var_names = counts.columns.astype(str)
+
+# 4. HIER GEBEURT DE FIX: MICA-coördinaten toewijzen aan de UMAP embedding matrix
+# Waarom: We trekken de UMAP_1 en UMAP_2 kolommen los uit adata.obs, 
+# zetten ze om naar een numpy matrix, en slaan ze op in .obsm['X_umap']
+adata.obsm['X_umap'] = adata.obs[['UMAP_1', 'UMAP_2']].to_numpy()
+
+# Waarom: Nu de coördinaten veilig in .obsm['X_umap'] staan, verwijderen we de 
+# losse kolommen uit .obs om je metadata tabel clean en overzichtelijk te houden.
+adata.obs = adata.obs.drop(columns=['UMAP_1', 'UMAP_2'])
+
+# 5. Opslaan als .h5ad bestand
+# Waarom: Dit is de finale stap. We slaan het object op in de DATA map.
+os.makedirs("./DATA", exist_ok=True)
+output_file = "./DATA/bacteria_all_genes_with_mica_coordinates.h5ad"
+
+adata.write_h5ad(output_file)
+
+print(f"\n--- SUCCESS ---")
+print(f"Je AnnData object is succesvol geconverteerd en opgeslagen!")
+print(f"Bestandslocatie: {output_file}")
+print(f"Data structuur: {adata.shape[0]} cellen x {adata.shape[1]} genen")
+print(f"Beschikbare coördinaten: {list(adata.obsm.keys())} (bevat je MICA data)")
+print(f"Beschikbare metadata: {adata.obs.columns.tolist()} (bevat o.a. 'clusterID' en 'sample')")
 
